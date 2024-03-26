@@ -412,11 +412,8 @@
     :local msg;
     :local dhcpClientID [/ip/dhcp-client find interface=$interfaceArg]
     if ([:len $dhcpClientID] > 0) do={
-        :put 111
         :local resultScriptDHCPClient [/ip/dhcp-client get [find interface=$interfaceArg] script]
-        :put 222
         :if ($resultScriptDHCPClient != "") do={
-            :put 333
             :if ($resultScriptDHCPClient = $scriptSource) do={
                 set $msg "OK! The script in DHCP client on interface $interfaceArg matches the expected script."
             } else={
