@@ -1,3 +1,5 @@
+# for ROS  7
+# v 0.0.1
 :put "set global vars"
 /system/script/run set_global_varible
 :put "global vars was setted"
@@ -7,7 +9,7 @@
 :global PingTargets
 :global MainInterface
 :global BackupInterface
-:local isResetUsb true
+:local isResetUsb false
 
 
 :put "load functions_for_reserv"

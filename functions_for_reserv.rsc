@@ -46,6 +46,26 @@
     :return true
 }
 
+:global checkDhcpClientExists do={
+    # Arguments:
+    #   ArgInterface - Name of the interface to check for DHCP client (string)
+    #
+    # Returns:
+    #   true if DHCP client exists, false otherwise
+
+    :put "Check DHCP clients for interface: $ArgInterface";
+    :log info ("Check DHCP clients for interface: $ArgInterface");
+    :local countClients [:len [/ip dhcp-client find interface=$ArgInterface]]
+    :if ($countClients = 0) do={
+        :log error ("No DHCP client found for interface $ArgInterface");
+        :return false;
+    } else={
+        :log info ("DHCP client found for interface $ArgInterface");
+        :return true;
+    }
+}
+
+# TODO add analyze ping result or return percent success?
 :global checkInternet do={
     # Args
     # checkInterface
@@ -65,6 +85,10 @@
             :set res [/ping $host interface=$checkInterface count=$PingCount]
             :set sumSuccessfulPing ($sumSuccessfulPing + $res)
             :put ("Ping to " . $host . ": " . $res)
+            :if ($res > 0) do={
+                :put ("Ping to " . $host . " is successful")
+                :return true
+            }
         } on-error={
             :set success false
             :put ("Error pinging host: " . $host . " on interface: " . $checkInterface)
@@ -77,6 +101,7 @@
         :return false
     }
 }
+
 
 :global ifNecessarySwitchTrafficByDhcpClient do={
     # args
@@ -103,20 +128,20 @@
     :local currentInterfaceMinDist;
 
     # Check correct distance and fix
-    :if ($mainInterfaceDistance=$backupInterfaceDistance) do={
+    :if ($mainInterfaceDistance = $backupInterfaceDistance) do={
         :put ("mainInterfaceDistance not must same backupInterfaceDistance! set 1 and 2")
         :log warning ("mainInterfaceDistance not must same backupInterfaceDistance! set 1 and 2")
         /ip dhcp-client  set $mainInterface default-route-distance=$onDistance
         /ip dhcp-client  set $backupInterface default-route-distance=$offDistance
         :return false
-    } else={
-        :if ($mainInterfaceDistance<=$backupInterfaceDistance) do={
-            set currentInterfaceMinDist $mainInterface
-        } else={
-            set currentInterfaceMinDist $backupInterface
-        }
     }
 
+    :if ($mainInterfaceDistance<=$backupInterfaceDistance) do={
+        set currentInterfaceMinDist $mainInterface
+    } else={
+        set currentInterfaceMinDist $backupInterface
+    }
+    
     :if ($currentInterfaceMinDist=$interfaceToSwitch) do={
         :put ("currentInterfaceMinDist=interfaceToSwitch switch not necessery")
         :return true
@@ -137,6 +162,8 @@
 }
 
 
+
+
 ##################check env###############
 # chek inteface and dhcp client
 # TODO добавить проверку статичности dhcp client, иначе скрипт не работает
@@ -145,28 +172,8 @@
     # MainInterfaceArg
     # BackupInterfaceArg
    
-    # Check interfaces
-    :put $MainInterfaceArg
-    :if ([:len [/interface find name=$MainInterfaceArg]] = 0) do={
-        :log error ("Main interface $MainInterfaceArg not found")
-        :return false
-    }
-    :if ([:len [/interface find name=$BackupInterfaceArg]] = 0) do={
-        :log error ("Backup interface $BackupInterfaceArg not found")
-        :return false
-    }
 
-    # Check DHCP clients
-    :put "Check DHCP clients"
-    :if ([:len [/ip dhcp-client find interface=$MainInterfaceArg]] = 0) do={
-         :put "Check DHCP clients"
-        :log error ("No DHCP client found for main interface $MainInterfaceArg")
-        :return false
-    }
-    :if ([:len [/ip dhcp-client find interface=$BackupInterfaceArg]] = 0) do={
-        :log error ("No DHCP client found for backup interface $BackupInterfaceArg")
-        :return false
-    }
+
 
     # Check necessary script functions
     :put "Check necessary script functions"

@@ -1,4 +1,3 @@
-# for ros 7
 # set global vars
 :put "Load global variable 'set_global_varible'"
 /system script run set_global_varible
@@ -50,11 +49,11 @@
 :global helperOffICMP do={
     # Args
     # interfaceArg
-    :put "interfaceArg $interfaceArg"
-    :put "off icmp"
-    :put "interfaceArg $interfaceArg"
-    /ip firewall filter add chain=input place-before=0 in-interface=$interfaceArg action=drop protocol=icmp comment="Block ICMP for test Switch"
+    :put "helperOffICMP interfaceArg $interfaceArg"
+
+    /ip firewall filter add chain=input place-before=*0 in-interface=$interfaceArg action=drop protocol=icmp comment="Block ICMP for test Switch"
     :put "icmp been offed"
+    :delay 5s
     :return true
 }
 
@@ -67,10 +66,13 @@
 :global testHelperOffICMP do={
     # Args
     # interfaceArg
-    
+    :put "testHelperOffICMP"
+
+    # Used functions
     :global helperOffICMP;
     :global helperOnICMP;
     :local count 4
+    
     :local okPing [ping interface=$interfaceArg count=$count 8.8.8.8]
 
     :put "interfaceArg $interfaceArg"
@@ -99,7 +101,42 @@
     :return "Ok testHelperOffICMP"
     }
 
-# TODO перенести в ROS7
+
+:global checkInterfaceAndDhcpClient do={
+    # Args
+    # ArgInterface: The name of the main interface to check
+    #
+    # return: Returns true if the main interface, a DHCP client for this interface, and a static DHCP client exist; otherwise, returns false
+
+    # Check interfaces
+    :put "Check exists $ArgInterface"
+    :if ([:len [/interface find name=$ArgInterface]] = 0) do={
+        :local errorText "Main interface $ArgInterface not found"
+        :log error ($errorText)
+        :return false
+    }
+
+    :put "Check exist DHCP clients for interface $ArgInterface"
+    :local isExistMainDhcpClient [$checkDhcpClientExists ArgInterface=$ArgInterface]
+    :if ($isExistMainDhcpClient = false) do={
+        :local errorText "No DHCP client found for main interface $ArgInterface"
+        :put $errorText
+        :log error ($errorText)
+        :return false
+    }
+
+    # Check static DHCP clients
+    :put "Check static DHCP clients"
+    :if ([:len [/ip dhcp-client find interface=$ArgInterface static=yes]] = 0) do={
+        :local errorText "No static DHCP client found for main interface $ArgInterface"
+        :log error $errorText
+        :return false
+    }
+
+    :return true
+}
+
+
 :global testEnvironment do={
     #Args
     # MainInterfaceArg
@@ -109,7 +146,6 @@
         :put "MainInterfaceArg $MainInterfaceArg"
         :put "BackupInterfaceArg $BackupInterfaceArg"
         
-
         :local mainDistance [/ip dhcp-client get $MainInterfaceArg default-route-distance ];
         :put "$MainInterfaceArg default-route-distance   = $mainDistance"
         :if ( 1 != $mainDistance) do={
@@ -121,7 +157,22 @@
         :if (2 != $backupDistance) do={
             :return "$BackupInterfaceArg default-route-distance  must be 2!"
         }
-        :return "Ok! testEnvironment"
+        :return "PASS testEnvironment"
+
+        # Check interfaces
+        :put "Check MainInterfaceArg $MainInterfaceArg"
+        :local result [$checkInterfaceAndDhcpClient ArgInterface=$MainInterfaceArg]
+        :if ($result = false) do={
+            :log error ("Main interface $MainInterfaceArg check failed")
+            :return false
+        }
+        :put "Check BackupInterfaceArg $BackupInterfaceArg"
+        :set result [$checkInterfaceAndDhcpClient ArgInterface=$BackupInterfaceArg]
+        :if ($result = false) do={
+            :log error ("Main interface $BackupInterfaceArg check failed")
+            :return false
+        }
+
     } on-error={
             :return "Exception! Somthing wrong! \n\r mainInterface $MainInterfaceArg \n\r backupInterface $BackupInterfaceArg"
             
@@ -139,13 +190,15 @@
     :local resutlTestError false; # or string!
 
     :do {
-
+        :put "Prepare dhcp-client set default-route-distance=2 "
         /ip dhcp-client set $MainInterfaceArg default-route-distance=2
+
+        :put "switch to MainInterface"
         :put [$ifNecessarySwitchTrafficByDhcpClient interfaceToSwitch=$MainInterfaceArg mainInterface=$MainInterfaceArg backupInterface=$BackupInterfaceArg]
         :delay 2s;
         :local expected 1
         :local real [/ip dhcp-client get $MainInterfaceArg default-route-distance]
-        :put [/ip dhcp-client get $MainInterfaceArg default-route-distance]
+        :put "default-route-distance  of $MainInterfaceArg ==  $real"
         :if ($real!=$expected) do={
             set resutlTestError "Error! ifNecessarySwitchTrafficByDhcpClient failed distance MainInterface real != expected real = $real expected = $expected \n\r interfaceToSwitch $MainInterfaceArg \n\r mainInterface $MainInterfaceArg \n\r backupInterface $BackupInterfaceArg"
         }
@@ -169,7 +222,7 @@
     /ip dhcp-client set $BackupInterfaceArg default-route-distance=2
 
     :if ($resutlTestError=false) do={
-        :return "Ok! ifNecessarySwitchTrafficByDhcpClient"
+        :return "PASS ifNecessarySwitchTrafficByDhcpClient"
     }
     :return $resutlTestError
 }
@@ -184,7 +237,7 @@
     
     :local result [$renewDhcp interfaceArg=$interfaceArg]
     :if ($result=true) do={
-        :return "Ok! testRenewDhcp"
+        :return "PASS testRenewDhcp"
     }
     :return "Error! testRenewDhcp"
 }
@@ -199,7 +252,7 @@
     # test function
     :global checkInternet
 
-    :local testResult "Ok! testCheckInternet";
+    :local testResult "PASS testCheckInternet";
     :do {
         :local isOkInternet [$checkInternet checkInterface=$checkInterface PingTargets=$PingTargets PingCount=$PingCount]
         :if ($isOkInternet=false) do={
@@ -208,7 +261,7 @@
 
         # Add firewall filter for ICMP packets on checkInterface
         # TODO place-before=1??? в разных кейсах разное значение?
-        /ip firewall filter add chain=input place-before=0 in-interface=$checkInterface action=drop protocol=icmp comment="testCheckInternet: Block ICMP"
+        /ip firewall filter add chain=input place-before=*0 in-interface=$checkInterface action=drop protocol=icmp comment="testCheckInternet: Block ICMP"
         :delay 2s;
         # Check that the internet connection is now blocked
         :local isBlockedInternet [$checkInternet checkInterface=$checkInterface PingTargets=$PingTargets PingCount=$PingCount]
@@ -232,12 +285,16 @@
     # Used functions
     :global fResetUSBPower
     :put "===== testResetUsb"
-
-    :local result [$fResetUSBPower]
-    :if ($result=true) do={
-        :return "OK! testResetUsb"
+    
+    do {
+        :local result [$fResetUSBPower]
+        :if ($result=true) do={
+            :return "PASS testResetUsb"
+        }
+        :return "ERROR! testResetUsb, result=$result"
+    } on-error={
+        :return "ERROR! testResetUsb on-error catch may be not found /system routerboard" 
     }
-    :return "ERROR! testResetUsb"
 }
 
 :global testMainCheckInterfacesAndSwitch do={
@@ -396,9 +453,13 @@
     :local isRoutingTablePresent [/routing/table/find name=$routingTable]
 
     :if ($isRoutingTablePresent != "") do={
-        set $msg  "OK! testTables Routing table $routingTable is present"
+        set $msg  "PASS testTables Routing table $routingTable is present"
+        put $msg
+        return $msg
     } else={
         set $msg "ERROR! testTables Routing table $routingTable is not present"
+        put $msg
+        return $msg
     }
 }
 
@@ -408,7 +469,7 @@
     # interfaceArg 
     # scriptSource
 
-    :local resultTest true
+
     :local msg;
     :local dhcpClientID [/ip/dhcp-client find interface=$interfaceArg]
     if ([:len $dhcpClientID] > 0) do={
@@ -416,22 +477,77 @@
         :if ($resultScriptDHCPClient != "") do={
             :if ($resultScriptDHCPClient = $scriptSource) do={
                 set $msg "OK! The script in DHCP client on interface $interfaceArg matches the expected script."
+                :put $msg
+                :return $msg
             } else={
                 set $msg "WARNING! The script in DHCP client on interface $interfaceArg does not match the expected script."
-                set $resultTest false
+                :return $msg
             }
         } else={
             set $msg "ERROR! No script found in DHCP client on interface $interfaceArg."
-            set $resultTest false
+            :put $msg
+            :return $msg
         }
     } else={
         set $msg "ERROR! No DHCP client found on interface $interfaceArg."
-        set $resultTest false
+        :put $msg
+        :return $msg
     }
-
     :put $msg
     :return $msg
 }
+
+
+:global testDhcpClientExists do={
+    # Args 
+    # ArgInterface: The interface to check DHCP client existence.
+
+    # Used functions
+    :global checkDhcpClientExists
+
+    :local resultMsg ""
+    :put "Testing DHCP Client existence on interface $ArgInterface"
+    :local isExistDHCPClient [$checkDhcpClientExists ArgInterface=$ArgInterface]
+    :put "DHCP Client Exists: $isExistDHCPClient"
+    
+    # Checking the type of isExistDHCPClient to ensure it is a boolean.
+    :if ([:typeof $isExistDHCPClient] != "bool") do={
+        :set resultMsg "ERROR: Unexpected type for isExistDHCPClient. Expected 'bool', got '[:typeof $isExistDHCPClient]'."
+    } else={
+        :if ($isExistDHCPClient = true)  do={
+            :set resultMsg ("PASS: DHCP client absence on $ArgInterface matches expected result.")
+        } else={
+            :set resultMsg ("FAIL: Expected DHCP client not to exist on $ArgInterface.")
+        }
+    }
+
+    :return $resultMsg
+}
+:global testDhcpClientNotExists do={
+    # Args 
+    # ArgInterface
+
+    # Used functions
+    :global checkDhcpClientExists
+
+    :local resultMsg ""
+    :put "testDhcpClientNotExists ArgInterface $ArgInterface"
+    :local isExistDHCPClient [$checkDhcpClientExists ArgInterface=$ArgInterface]
+    :put "isExistDHCPClient $isExistDHCPClient"
+    # Checking the type of isExistDHCPClient to ensure it is a boolean.
+    :if ([:typeof $isExistDHCPClient] != "bool") do={
+        :set resultMsg "ERROR: Unexpected type for isExistDHCPClient. Expected 'bool', got '[:typeof $isExistDHCPClient]'."
+    } else={
+    :if ($isExistDHCPClient = false)  do={
+        :set resultMsg ("PASS: No DHCP client on $ArgInterface as expected.")
+    } else={
+        :set resultMsg ("FAIL: Expected no DHCP client presence on $ArgInterface, but found one.")
+    }}
+
+    :return $resultMsg
+}
+
+
 :local scriptDHCPISP1 "# bound 
 # lease-address
 # gateway-address
@@ -518,18 +634,43 @@
 :local resultTestTablesISP2 [$testTables routingTable=$nameTableISP2]
 :put "\n\n"
 
-:put "====== 8 testResetUsb"
+
+
+:put "====== 8 testDhcpClientExists"
+:local resultTestDhcpClientExists [$testDhcpClientExists ArgInterface=$MainInterface]
+:put $resultTestDhcpClientExists
+:put "\n\n"
+
+:put "====== 9 testDhcpClientNotExists"
+:local resultTestDhcpClientNotExists [$testDhcpClientNotExists ArgInterface="ether5"]
+:put $resultTestDhcpClientNotExists
+
+
+:put "====== 10 testResetUsb"
 :local resultTestResetUsb [$testResetUsb]
 :put $resultTestResetUsb
 :put "\n\n"
 
 :put "======summary"
+:put "====== 0 testHelperOffICMP"
 :put $resultTestHelperOffICMP
+:put "====== 2 testifNecessarySwitchTrafficByDhcpClient"
 :put $resultTestifNecessarySwitchTrafficByDhcpClient
+:put "====== 3 testRenewDhcp"
 :put $resultTestRenewDhcp
+:put "====== 4 testCheckInternet"
 :put $resultTestCheckInternet
+:put "====== 5 testMainCheckInterfacesAndSwitch"
 :put $resultTestMainCheckInterfacesAndSwitch
+:put "====== 6 testScriptDHCPclient"
+:put $resultTestScriptDHCPclient1
 :put $resultTestScriptDHCPclient2
+:put "====== 7 testTables"
 :put $resultTestTablesISP1
 :put $resultTestTablesISP2
+:put "====== 8 testDhcpClientExists"
+:put $resultTestDhcpClientExists
+:put "====== 9 testDhcpClientNotExists"
+:put $resultTestDhcpClientNotExists
+:put "====== 10 testResetUsb"
 :put $resultTestResetUsb
